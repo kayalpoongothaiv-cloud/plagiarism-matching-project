@@ -1,0 +1,263 @@
+"""
+=============================================================
+  RABIN–KARP ALGORITHM
+  For Academic Plagiarism Detection System
+=============================================================
+  Time Complexity : Average - O(n + m)
+                   Worst   - O(n * m)  [many hash collisions]
+  Space Complexity: O(1)
+
+  Where:
+    n = length of the text
+    m = length of the pattern
+
+  Key Idea:
+    Use a ROLLING HASH to compute the hash of every m-length
+    window in the text in O(1) per slide (instead of O(m)).
+    Only perform character-by-character comparison when hashes
+    match — this eliminates most false comparisons.
+
+  Rolling Hash Formula:
+    hash(s) = (s[0]*d^(m-1) + s[1]*d^(m-2) + ... + s[m-1]) mod q
+
+    When sliding the window one step right:
+    new_hash = (d * (old_hash - text[i]*h) + text[i+m]) mod q
+    where h = d^(m-1) mod q
+=============================================================
+"""
+
+import time
+import tracemalloc
+
+
+# ──────────────────────────────────────────────────────────────
+#  Constants
+# ──────────────────────────────────────────────────────────────
+BASE  = 256          # Number of characters in input alphabet (ASCII)
+PRIME = 101          # A prime number used to reduce hash collisions
+
+
+# ──────────────────────────────────────────────────────────────
+#  Rabin–Karp Search
+# ──────────────────────────────────────────────────────────────
+
+def rabin_karp_search(text: str, pattern: str,
+                      case_sensitive: bool = True,
+                      base: int = BASE,
+                      prime: int = PRIME) -> dict:
+    """
+    Rabin–Karp Pattern Searching Algorithm.
+
+    Computes a rolling hash for each window of the text and
+    compares it with the pattern hash. On a hash match,
+    verifies character-by-character to eliminate spurious hits.
+
+    Args:
+        text           : The document/text to search in.
+        pattern        : The keyword/phrase to search for.
+        case_sensitive : If False, performs case-insensitive search.
+        base           : Hash base (default 256 for ASCII).
+        prime          : Prime modulus to reduce collisions.
+
+    Returns:
+        result dict with matches, spurious hits, comparisons,
+        timing, and memory usage.
+    """
+
+    if not case_sensitive:
+        text    = text.lower()
+        pattern = pattern.lower()
+
+    n = len(text)
+    m = len(pattern)
+
+    if m > n or m == 0:
+        return _empty_result("Rabin–Karp Algorithm", pattern)
+
+    matches      = []
+    comparisons  = 0
+    spurious_hits = 0          # Hash match but character mismatch
+
+    # h = base^(m-1) mod prime
+    h = 1
+    for _ in range(m - 1):
+        h = (h * base) % prime
+
+    # Compute initial hash for pattern and first window of text
+    pattern_hash = 0
+    window_hash  = 0
+
+    for k in range(m):
+        pattern_hash = (base * pattern_hash + ord(pattern[k])) % prime
+        window_hash  = (base * window_hash  + ord(text[k]))    % prime
+
+    # ── Start performance tracking ────────────────────────────
+    tracemalloc.start()
+    start_time = time.perf_counter()
+    # ─────────────────────────────────────────────────────────
+
+    for i in range(n - m + 1):
+
+        # ── Step 1: Compare hash values first (O(1)) ─────────
+        if window_hash == pattern_hash:
+
+            # ── Step 2: Verify character-by-character (O(m)) ─
+            is_match = True
+            for j in range(m):
+                comparisons += 1
+                if text[i + j] != pattern[j]:
+                    is_match = False
+                    spurious_hits += 1
+                    break
+
+            if is_match:
+                matches.append(i)
+
+        # ── Step 3: Compute rolling hash for next window ─────
+        if i < n - m:
+            window_hash = (
+                base * (window_hash - ord(text[i]) * h) + ord(text[i + m])
+            ) % prime
+
+            # Ensure non-negative hash
+            if window_hash < 0:
+                window_hash += prime
+
+    # ── Stop performance tracking ─────────────────────────────
+    end_time   = time.perf_counter()
+    _, peak    = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    # ─────────────────────────────────────────────────────────
+
+    return {
+        "algorithm"      : "Rabin–Karp Algorithm",
+        "pattern"        : pattern,
+        "pattern_hash"   : pattern_hash,
+        "matches"        : matches,
+        "match_count"    : len(matches),
+        "spurious_hits"  : spurious_hits,
+        "comparisons"    : comparisons,
+        "execution_time" : round(end_time - start_time, 8),
+        "memory_used_kb" : round(peak / 1024, 4),
+    }
+
+
+# ──────────────────────────────────────────────────────────────
+#  Multi-Pattern Search (Rabin–Karp Extension)
+# ──────────────────────────────────────────────────────────────
+
+def rabin_karp_multi_pattern(text: str, patterns: list,
+                              case_sensitive: bool = True) -> list:
+    """
+    Searches for MULTIPLE patterns simultaneously.
+    Useful for scanning academic documents for a set of
+    suspicious plagiarised phrases at once.
+
+    Args:
+        text           : The document to search.
+        patterns       : A list of patterns to search for.
+        case_sensitive : Toggle case sensitivity.
+
+    Returns:
+        A list of result dicts, one per pattern.
+    """
+    results = []
+    for pat in patterns:
+        res = rabin_karp_search(text, pat, case_sensitive)
+        results.append(res)
+    return results
+
+
+# ──────────────────────────────────────────────────────────────
+#  Helper utilities
+# ──────────────────────────────────────────────────────────────
+
+def _empty_result(algo: str, pattern: str) -> dict:
+    return {
+        "algorithm": algo, "pattern": pattern,
+        "matches": [], "match_count": 0, "spurious_hits": 0,
+        "comparisons": 0, "execution_time": 0.0,
+        "memory_used_kb": 0.0,
+    }
+
+
+def highlight_matches(text: str, pattern: str, matches: list) -> str:
+    """Wraps each matched occurrence in >>> ... <<< markers."""
+    if not matches:
+        return text
+    m      = len(pattern)
+    result = []
+    prev   = 0
+    for idx in matches:
+        result.append(text[prev:idx])
+        result.append(f">>>{text[idx:idx + m]}<<<")
+        prev = idx + m
+    result.append(text[prev:])
+    return "".join(result)
+
+
+def display_results(result: dict, text: str) -> None:
+    """Pretty-prints search results."""
+    print("\n" + "=" * 60)
+    print(f"  Algorithm       : {result['algorithm']}")
+    print(f"  Pattern Searched: \"{result['pattern']}\"")
+    print("=" * 60)
+    print(f"  Pattern Hash    : {result.get('pattern_hash', 'N/A')}")
+    print(f"  Total Matches   : {result['match_count']}")
+    print(f"  Match Positions : {result['matches']}")
+    print(f"  Spurious Hits   : {result.get('spurious_hits', 0)}")
+    print(f"  Comparisons     : {result['comparisons']}")
+    print(f"  Execution Time  : {result['execution_time']} seconds")
+    print(f"  Memory Used     : {result['memory_used_kb']} KB")
+    print("=" * 60)
+
+    if result["matches"]:
+        highlighted = highlight_matches(text, result["pattern"],
+                                        result["matches"])
+        print("\n  Highlighted Text (>>> match <<<):")
+        print(f"\n  {highlighted}\n")
+    else:
+        print("\n  No matches found in the document.\n")
+
+
+# ──────────────────────────────────────────────────────────────
+#  DEMO
+# ──────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+
+    sample_text = (
+        "Hashing is a technique used in the Rabin-Karp algorithm. "
+        "The Rabin-Karp algorithm uses rolling hash to detect patterns. "
+        "Plagiarism detection requires efficient pattern matching. "
+        "Rolling hash reduces time spent on repeated comparisons. "
+        "The Rabin-Karp approach is ideal for multiple pattern detection."
+    )
+
+    print("\n>>> RABIN–KARP ALGORITHM — PLAGIARISM DETECTION <<<")
+    print(f"\nDocument:\n{sample_text}")
+
+    # Single pattern search
+    result = rabin_karp_search(sample_text, "Rabin-Karp", case_sensitive=True)
+    display_results(result, sample_text)
+
+    # Case-insensitive search
+    result2 = rabin_karp_search(sample_text, "rolling hash",
+                                case_sensitive=False)
+    display_results(result2, sample_text.lower())
+
+    # Multi-pattern plagiarism scan
+    suspicious_phrases = [
+        "pattern matching",
+        "plagiarism detection",
+        "rolling hash",
+        "neural network",        # Not present → 0 matches
+    ]
+
+    print("\n  ── Multi-Pattern Plagiarism Scan ──")
+    multi_results = rabin_karp_multi_pattern(
+        sample_text, suspicious_phrases, case_sensitive=False
+    )
+    for r in multi_results:
+        print(f"  Pattern: \"{r['pattern']:<25}\" | "
+              f"Matches: {r['match_count']} | "
+              f"Positions: {r['matches']}")
