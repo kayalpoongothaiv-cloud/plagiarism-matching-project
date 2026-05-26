@@ -1,0 +1,328 @@
+"""
+=============================================================
+  BOYER–MOORE ALGORITHM
+  For Academic Plagiarism Detection System
+=============================================================
+  Time Complexity : Best  - O(n/m)  [sub-linear on avg]
+                   Worst - O(n * m) [all-same chars]
+  Space Complexity: O(sigma)  — sigma = alphabet size (256)
+
+  Where:
+    n = length of the text
+    m = length of the pattern
+
+  Key Idea:
+    Uses TWO heuristics to skip large sections of text:
+
+    1. BAD CHARACTER HEURISTIC
+       When a mismatch occurs at text[i+j] vs pattern[j]:
+       → Shift the pattern so that the last occurrence of
+         text[i+j] in the pattern aligns with text[i+j].
+       → If text[i+j] is not in pattern, shift by j+1.
+
+    2. GOOD SUFFIX HEURISTIC (implemented here)
+       When a suffix of the pattern has already matched:
+       → Shift the pattern to align the next occurrence of
+         that matched suffix within the pattern.
+
+    Boyer–Moore is one of the FASTEST algorithms in practice,
+    especially for large alphabets and long patterns.
+=============================================================
+"""
+
+import time
+import tracemalloc
+
+NO_OF_CHARS = 256       # ASCII alphabet size
+
+
+# ──────────────────────────────────────────────────────────────
+#  Heuristic 1: Bad Character Table
+# ──────────────────────────────────────────────────────────────
+
+def build_bad_char_table(pattern: str) -> dict:
+    """
+    Pre-processes the pattern to record the LAST occurrence
+    index of each character in the pattern.
+
+    If a character is not in the pattern, its value is -1,
+    meaning the entire pattern window should be shifted past it.
+
+    Args:
+        pattern: The search pattern.
+
+    Returns:
+        bad_char: dict mapping character → last index in pattern.
+
+    Example:
+        pattern  = "ABCBAB"
+        bad_char = {'A': 4, 'B': 5, 'C': 2}
+    """
+    bad_char = {}
+    for i, ch in enumerate(pattern):
+        bad_char[ch] = i        # Later occurrence overwrites earlier
+    return bad_char
+
+
+# ──────────────────────────────────────────────────────────────
+#  Heuristic 2: Good Suffix Table
+# ──────────────────────────────────────────────────────────────
+
+def build_good_suffix_table(pattern: str) -> list:
+    """
+    Pre-processes the pattern to build the good suffix shift table.
+
+    good_suffix[j] = amount to shift when mismatch occurs at
+                     position j in the pattern.
+
+    This ensures that the already-matched suffix is realigned
+    with the next occurrence of that suffix in the pattern.
+
+    Args:
+        pattern: The search pattern.
+
+    Returns:
+        good_suffix: list of shift amounts indexed by position.
+    """
+    m           = len(pattern)
+    good_suffix = [m] * (m + 1)   # Default: shift by full pattern length
+    border      = [0] * (m + 1)
+
+    # Phase 1: Compute border positions (suffix = prefix)
+    i = m
+    j = m + 1
+    border[i] = j
+
+    while i > 0:
+        while j <= m and pattern[i - 1] != pattern[j - 1]:
+            if good_suffix[j] == m:
+                good_suffix[j] = j - i
+            j = border[j]
+        i -= 1
+        j -= 1
+        border[i] = j
+
+    # Phase 2: Cases where the suffix only partially overlaps
+    j = border[0]
+    for k in range(m + 1):
+        if good_suffix[k] == m:
+            good_suffix[k] = j
+        if k == j:
+            j = border[j]
+
+    return good_suffix
+
+
+# ──────────────────────────────────────────────────────────────
+#  Boyer–Moore Search
+# ──────────────────────────────────────────────────────────────
+
+def boyer_moore_search(text: str, pattern: str,
+                       case_sensitive: bool = True) -> dict:
+    """
+    Boyer–Moore Pattern Searching Algorithm.
+
+    Uses the Bad Character and Good Suffix heuristics to
+    skip as many characters as possible after a mismatch,
+    achieving sub-linear average-case performance.
+
+    Matching is done RIGHT-TO-LEFT within each window.
+
+    Args:
+        text           : The document/text to search in.
+        pattern        : The keyword/phrase to search for.
+        case_sensitive : If False, performs case-insensitive search.
+
+    Returns:
+        result dict with matches, shifts, comparisons,
+        timing, and memory usage.
+    """
+
+    if not case_sensitive:
+        text    = text.lower()
+        pattern = pattern.lower()
+
+    n = len(text)
+    m = len(pattern)
+
+    if m == 0 or m > n:
+        return _empty_result("Boyer–Moore Algorithm", pattern)
+
+    bad_char   = build_bad_char_table(pattern)
+    good_suffix = build_good_suffix_table(pattern)
+
+    matches      = []
+    comparisons  = 0
+    total_shifts = 0
+
+    s = 0   # s = shift of the pattern window over the text
+
+    # ── Start performance tracking ────────────────────────────
+    tracemalloc.start()
+    start_time = time.perf_counter()
+    # ─────────────────────────────────────────────────────────
+
+    while s <= n - m:
+
+        j = m - 1   # Start matching from rightmost character
+
+        # Match right-to-left within the current window
+        while j >= 0:
+            comparisons += 1
+            if pattern[j] == text[s + j]:
+                j -= 1
+            else:
+                break           # Mismatch found
+
+        if j < 0:
+            # ── Full match found ──────────────────────────────
+            matches.append(s)
+
+            # Shift: align next suffix occurrence
+            shift = good_suffix[0]
+
+        else:
+            # ── Mismatch: compute maximum shift ──────────────
+
+            # Bad Character shift
+            bc_shift = j - bad_char.get(text[s + j], -1)
+            bc_shift = max(1, bc_shift)
+
+            # Good Suffix shift
+            gs_shift = good_suffix[j + 1]
+
+            # Take the MAXIMUM shift (most aggressive skip)
+            shift = max(bc_shift, gs_shift)
+
+        s            += shift
+        total_shifts += 1
+
+    # ── Stop performance tracking ─────────────────────────────
+    end_time   = time.perf_counter()
+    _, peak    = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    # ─────────────────────────────────────────────────────────
+
+    return {
+        "algorithm"     : "Boyer–Moore Algorithm",
+        "pattern"       : pattern,
+        "matches"       : matches,
+        "match_count"   : len(matches),
+        "comparisons"   : comparisons,
+        "total_shifts"  : total_shifts,
+        "execution_time": round(end_time - start_time, 8),
+        "memory_used_kb": round(peak / 1024, 4),
+    }
+
+
+# ──────────────────────────────────────────────────────────────
+#  Helper utilities
+# ──────────────────────────────────────────────────────────────
+
+def _empty_result(algo: str, pattern: str) -> dict:
+    return {
+        "algorithm": algo, "pattern": pattern,
+        "matches": [], "match_count": 0, "total_shifts": 0,
+        "comparisons": 0, "execution_time": 0.0,
+        "memory_used_kb": 0.0,
+    }
+
+
+def highlight_matches(text: str, pattern: str, matches: list) -> str:
+    """Wraps each matched occurrence in >>> ... <<< markers."""
+    if not matches:
+        return text
+    m      = len(pattern)
+    result = []
+    prev   = 0
+    for idx in matches:
+        result.append(text[prev:idx])
+        result.append(f">>>{text[idx:idx + m]}<<<")
+        prev = idx + m
+    result.append(text[prev:])
+    return "".join(result)
+
+
+def display_results(result: dict, text: str) -> None:
+    """Pretty-prints search results and heuristic info."""
+    print("\n" + "=" * 60)
+    print(f"  Algorithm       : {result['algorithm']}")
+    print(f"  Pattern Searched: \"{result['pattern']}\"")
+    print("=" * 60)
+    print(f"  Total Matches   : {result['match_count']}")
+    print(f"  Match Positions : {result['matches']}")
+    print(f"  Total Shifts    : {result.get('total_shifts', 'N/A')}")
+    print(f"  Comparisons     : {result['comparisons']}")
+    print(f"  Execution Time  : {result['execution_time']} seconds")
+    print(f"  Memory Used     : {result['memory_used_kb']} KB")
+    print("=" * 60)
+
+    if result["matches"]:
+        highlighted = highlight_matches(text, result["pattern"],
+                                        result["matches"])
+        print("\n  Highlighted Text (>>> match <<<):")
+        print(f"\n  {highlighted}\n")
+    else:
+        print("\n  No matches found in the document.\n")
+
+
+def display_bad_char_table(pattern: str) -> None:
+    """Prints the Bad Character table for a given pattern."""
+    table = build_bad_char_table(pattern)
+    print(f"\n  Bad Character Table for pattern \"{pattern}\":")
+    print(f"  {'Char':<10} {'Last Index':<10}")
+    print(f"  {'-'*20}")
+    for ch, idx in sorted(table.items()):
+        print(f"  {repr(ch):<10} {idx:<10}")
+
+
+# ──────────────────────────────────────────────────────────────
+#  DEMO
+# ──────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+
+    sample_text = (
+        "Boyer-Moore is one of the fastest string matching algorithms. "
+        "The bad character heuristic allows Boyer-Moore to skip sections. "
+        "Academic plagiarism can be detected using Boyer-Moore efficiently. "
+        "Boyer-Moore scans the pattern from right to left for fast matching. "
+        "Using Boyer-Moore reduces the number of comparisons significantly."
+    )
+
+    print("\n>>> BOYER–MOORE ALGORITHM — PLAGIARISM DETECTION <<<")
+    print(f"\nDocument:\n{sample_text}")
+
+    # Test 1: Single pattern
+    result = boyer_moore_search(sample_text, "Boyer-Moore",
+                                case_sensitive=True)
+    display_results(result, sample_text)
+
+    # Show bad character table
+    display_bad_char_table("Boyer-Moore")
+
+    # Test 2: Case-insensitive
+    result2 = boyer_moore_search(sample_text, "plagiarism",
+                                 case_sensitive=False)
+    display_results(result2, sample_text.lower())
+
+    # Test 3: Multi-word phrase
+    result3 = boyer_moore_search(
+        sample_text,
+        "bad character heuristic",
+        case_sensitive=True
+    )
+    display_results(result3, sample_text)
+
+    # Test 4: Pattern not present
+    result4 = boyer_moore_search(sample_text, "neural network")
+    display_results(result4, sample_text)
+
+    # Performance comparison: how many shifts vs comparisons?
+    print("  ── Shift Efficiency Summary ──")
+    patterns = ["Boyer-Moore", "matching", "plagiarism", "right to left"]
+    for pat in patterns:
+        r = boyer_moore_search(sample_text, pat, case_sensitive=False)
+        print(f"  Pattern: \"{pat:<22}\" | "
+              f"Shifts: {r['total_shifts']:>4} | "
+              f"Comparisons: {r['comparisons']:>4} | "
+              f"Matches: {r['match_count']}")
