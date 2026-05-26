@@ -1,0 +1,161 @@
+"""
+=============================================================
+  NAIVE PATTERN MATCHING ALGORITHM
+  For Academic Plagiarism Detection System
+=============================================================
+  Time Complexity : Best  - O(n)
+                   Worst - O(n * m)
+  Space Complexity: O(1)
+
+  Where:
+    n = length of the text
+    m = length of the pattern
+=============================================================
+"""
+
+import time
+import tracemalloc
+
+
+def naive_search(text: str, pattern: str, case_sensitive: bool = True) -> dict:
+    """
+    Naive (Brute-Force) Pattern Matching Algorithm.
+
+    Slides the pattern over the text one character at a time
+    and checks for a match at each position.
+
+    Args:
+        text           : The document/text to search in.
+        pattern        : The keyword/phrase to search for.
+        case_sensitive : If False, search is case-insensitive.
+
+    Returns:
+        A dictionary containing:
+            - matches        : list of starting indices where pattern is found
+            - comparisons    : total character comparisons made
+            - execution_time : time taken in seconds
+            - memory_used    : memory used in KB
+            - match_count    : total number of matches
+    """
+
+    if not case_sensitive:
+        text    = text.lower()
+        pattern = pattern.lower()
+
+    n = len(text)
+    m = len(pattern)
+
+    matches     = []
+    comparisons = 0
+
+    # ── Start performance tracking ────────────────────────────
+    tracemalloc.start()
+    start_time = time.perf_counter()
+    # ─────────────────────────────────────────────────────────
+
+    # Slide the pattern window across the text
+    for i in range(n - m + 1):          # O(n) outer iterations
+        match = True
+
+        for j in range(m):              # O(m) inner comparisons
+            comparisons += 1
+            if text[i + j] != pattern[j]:
+                match = False
+                break                   # Mismatch → stop inner loop
+
+        if match:
+            matches.append(i)           # Record the starting index
+
+    # ── Stop performance tracking ─────────────────────────────
+    end_time   = time.perf_counter()
+    _, peak    = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    # ─────────────────────────────────────────────────────────
+
+    return {
+        "algorithm"     : "Naive Pattern Matching",
+        "pattern"       : pattern,
+        "matches"       : matches,
+        "match_count"   : len(matches),
+        "comparisons"   : comparisons,
+        "execution_time": round(end_time - start_time, 8),
+        "memory_used_kb": round(peak / 1024, 4),
+    }
+
+
+def highlight_matches(text: str, pattern: str, matches: list,
+                      case_sensitive: bool = True) -> str:
+    """
+    Wraps every matched occurrence in >>> ... <<< markers
+    so the user can visually identify plagiarised segments.
+    """
+    if not matches:
+        return text
+
+    m      = len(pattern)
+    result = []
+    prev   = 0
+
+    for idx in matches:
+        result.append(text[prev:idx])                    # text before match
+        result.append(f">>>{text[idx:idx + m]}<<<")     # highlighted match
+        prev = idx + m
+
+    result.append(text[prev:])                           # remaining text
+    return "".join(result)
+
+
+def display_results(result: dict, text: str) -> None:
+    """Pretty-prints the search results to the console."""
+
+    print("\n" + "=" * 60)
+    print(f"  Algorithm      : {result['algorithm']}")
+    print(f"  Pattern Searched: \"{result['pattern']}\"")
+    print("=" * 60)
+    print(f"  Total Matches  : {result['match_count']}")
+    print(f"  Match Positions: {result['matches']}")
+    print(f"  Comparisons    : {result['comparisons']}")
+    print(f"  Execution Time : {result['execution_time']} seconds")
+    print(f"  Memory Used    : {result['memory_used_kb']} KB")
+    print("=" * 60)
+
+    if result["matches"]:
+        highlighted = highlight_matches(text, result["pattern"],
+                                        result["matches"])
+        print("\n  Highlighted Text (>>> match <<<):")
+        print(f"\n  {highlighted}\n")
+    else:
+        print("\n  No matches found in the document.\n")
+
+
+# ──────────────────────────────────────────────────────────────
+#  DEMO
+# ──────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+
+    # Sample academic document text
+    sample_text = (
+        "Plagiarism is the act of using someone else's work without credit. "
+        "Plagiarism detection systems help identify copied content efficiently. "
+        "String matching algorithms are used for pattern detection in text. "
+        "The Naive algorithm checks every position for a pattern match. "
+        "Plagiarism undermines academic integrity and should be avoided."
+    )
+
+    search_pattern = "Plagiarism"
+
+    print("\n>>> NAIVE PATTERN MATCHING — PLAGIARISM DETECTION <<<")
+    print(f"\nDocument:\n{sample_text}")
+
+    # Case-sensitive search
+    result = naive_search(sample_text, search_pattern, case_sensitive=True)
+    display_results(result, sample_text)
+
+    # Case-insensitive search
+    result_ci = naive_search(sample_text, search_pattern, case_sensitive=False)
+    print("  [Case-Insensitive Search]")
+    display_results(result_ci, sample_text.lower())
+
+    # Edge case: pattern not in text
+    result_none = naive_search(sample_text, "blockchain", case_sensitive=False)
+    display_results(result_none, sample_text)
